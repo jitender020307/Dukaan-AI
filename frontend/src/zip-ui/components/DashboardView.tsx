@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { DashboardData, Order, InventoryProduct, NavTab } from '../types';
 import { api } from '../api';
+import { RestockView } from './RestockView';
 
 interface DashboardViewProps {
   data: DashboardData | null;
@@ -325,6 +326,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
         </div>
+        <RestockView />
       </div>
     </div>
   );

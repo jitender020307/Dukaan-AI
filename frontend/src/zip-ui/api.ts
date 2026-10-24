@@ -1,5 +1,7 @@
 import { supabase } from '../lib/supabase';
-import type { AssistantParseResult, CustomerRecord, DashboardData, InventoryProduct, KhataTransaction, Order, SystemStatusData } from './types';
+import { parseProductMessage } from './parseProductMessage';
+export { parseProductMessage };
+import type { AssistantParseResult, ChatProductDraft, ChatProductResult, CustomerRecord, DashboardData, InventoryProduct, KhataTransaction, Order, SystemStatusData, RestockRecommendation } from './types';
 
 type Row = Record<string, any>;
 const requireClient = () => { if (!supabase) throw new Error('Supabase is not configured. Set the VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY environment variables.'); return supabase; };
@@ -15,7 +17,7 @@ async function storeId() {
 }
 function mapProduct(p: Row): InventoryProduct {
   const stock = Number(p.stock) || 0; const min = Number(p.min_stock) || 0;
-  return { id:p.id,name:p.name,nameHi:p.name_hi||'',barcode:p.barcode||'',category:p.category||'General',stock,unit:p.unit||'piece',minThreshold:min,costPrice:Number(p.cost_price)||0,sellingPrice:Number(p.selling_price)||0,mrp:Number(p.mrp)||0,distributor:p.distributor||'',distributorPhone:p.distributor_phone||'',status:stock<=0?'out_of_stock':stock<=min?'low_stock':'in_stock' };
+  return { id:p.id,name:p.name,nameHi:p.name_hi||'',barcode:p.barcode||'',category:p.category||'General',stock,unit:p.unit||'piece',minThreshold:min,leadDays:Number(p.lead_days)||1,costPrice:Number(p.cost_price)||0,sellingPrice:Number(p.selling_price)||0,mrp:Number(p.mrp)||0,distributor:p.distributor||'',distributorPhone:p.distributor_phone||'',status:stock<=0?'out_of_stock':stock<=min?'low_stock':'in_stock' };
 }
 function mapOrder(s: Row, lines: Row[]): Order {
   const items=lines.filter(x=>x.sale_id===s.id).map(x=>({productId:x.product_id,productName:x.product_name,quantity:Number(x.quantity),pricePerUnit:Number(x.price_per_unit),total:Number(x.line_total)}));
@@ -110,6 +112,28 @@ export const api={
     const subtotal=parsedItems.reduce((n,i)=>n+i.total,0);
     return {customerMessage:message,parsedItems,clarificationsNeeded,confirmedSummary:{itemsCount:parsedItems.reduce((n,i)=>n+i.quantity,0),subtotal,deliveryFee:0,total:subtotal,canPlaceOrder:parsedItems.length>0&&clarificationsNeeded.length===0}};
   },
+  parseAddProduct:async(message:string):Promise<ChatProductDraft>=>{
+    return parseProductMessage(message);
+  },
+  createProductFromChat:async(draft:ChatProductDraft):Promise<ChatProductResult>=>{
+    const client=requireClient();
+    const product=await api.createProduct({
+      name:draft.name,
+      nameHi:draft.nameHi,
+      barcode:draft.barcode,
+      category:draft.category,
+      stock:draft.stock,
+      unit:draft.unit,
+      minThreshold:draft.minStock,
+      costPrice:draft.costPrice,
+      sellingPrice:draft.sellingPrice,
+      mrp:draft.mrp,
+      distributor:draft.distributor,
+      distributorPhone:draft.distributorPhone,
+      leadDays:draft.leadDays,
+    });
+    return {success:true,productId:product.id,name:product.name,stock:product.stock,message:`"${product.name}" has been added to your inventory.`};
+  },
   getDashboard:async():Promise<DashboardData>=>{
     const client=requireClient();const [sales,inventory,entries,adjustments]=await Promise.all([fetchOrders(),api.getInventory(),client.from('khata_entries').select('*').order('created_at',{ascending:false}).limit(20),client.from('inventory_adjustments').select('*').order('created_at',{ascending:false}).limit(20)]);
     if(entries.error)throw entries.error;if(adjustments.error)throw adjustments.error;
@@ -118,9 +142,80 @@ export const api={
     const lowStockProducts=inventory.filter(p=>p.status==='low_stock'||p.status==='out_of_stock');
     return {todaySales,todayBillsCount:sales.filter(s=>new Date(s.createdAt).toDateString()===today).length,recentOrders:sales.slice(0,8),pendingOrdersCount:0,lowStockCount:lowStockProducts.length,totalProducts:inventory.length,pendingOrders:[],lowStockProducts,recentActivity};
   },
+  getRestockRecommendations:async():Promise<import('./types').RestockRecommendation[]>=>{
+    const client=requireClient();
+    const store_id=await storeId();
+    const today=new Date();
+    const windowStart=new Date();windowStart.setDate(today.getDate()-6);windowStart.setHours(0,0,0,0);
+    const windowEnd=new Date();windowEnd.setDate(today.getDate()+1);windowEnd.setHours(0,0,0,0);
+    const salesRes=await client.from('sales').select('id,created_at').eq('store_id',store_id).gte('created_at',windowStart.toISOString()).lt('created_at',windowEnd.toISOString()).order('created_at',{ascending:true});
+    if(salesRes.error)throw salesRes.error;
+    const salesRows=salesRes.data||[];
+    const saleIds=salesRows.map(s=>s.id);
+    const saleTimestamps: Record<string,string>={};
+    for(const s of salesRows)saleTimestamps[s.id]=s.created_at;
+    let saleItemsRes: any = { data: [] };
+    if(saleIds.length>0){
+      const res=await client.from('sale_items').select('product_id,quantity,price_per_unit,sale_id').eq('store_id',store_id).in('sale_id',saleIds);
+      if(res.error)throw res.error;
+      saleItemsRes=res;
+    }
+    const productsRes=await client.from('products').select('*').eq('store_id',store_id);
+    if(productsRes.error)throw productsRes.error;
+    const products=productsRes.data||[];
+    const recommendations: import('./types').RestockRecommendation[]=[];
+    // Oldest-to-newest recency weights (linear ramp, sums to 1). Newer days carry more weight.
+    const weightNumerators=[1,2,3,4,5,6,7];
+    const weightDenominator=weightNumerators.reduce((a,b)=>a+b,0); // 28
+    const dailyWeights=weightNumerators.map(n=>n/weightDenominator);
+    const dailyWeightLabels=weightNumerators.map(n=>`${n}/${weightDenominator}`);
+    for(const product of products){
+      const productSaleItems=saleItemsRes.data?.filter((item: any)=>item.product_id===product.id)||[];
+      const salesHistory: number[] = Array(7).fill(0);
+      if(productSaleItems.length>0){
+        for(let i=0;i<7;i++){
+          const dayStart=new Date();dayStart.setDate(today.getDate()-6+i);dayStart.setHours(0,0,0,0);
+          const dayEnd=new Date(dayStart);dayEnd.setDate(dayStart.getDate()+1);
+          const daySales=productSaleItems.filter((item: any)=>{
+            const saleTime=saleTimestamps[item.sale_id];
+            if(!saleTime)return false;
+            const saleDate=new Date(saleTime).getTime();
+            return saleDate>=dayStart.getTime()&&saleDate<dayEnd.getTime();
+          });
+          salesHistory[i]=daySales.map((item: any)=>item.quantity).reduce((sum: number,qty: number)=>sum+qty,0);
+        }
+      }
+      const weightedDailyDemand=salesHistory.reduce((sum: number,qty: number,idx: number)=>sum+qty*dailyWeights[idx],0);
+      const leadDays=Number(product.lead_days)||1;
+      const minStock=Number(product.min_stock)||0;
+      const currentStock=Number(product.stock)||0;
+      const expectedDemandDuringLeadTime=weightedDailyDemand*leadDays;
+      const bufferStock=Math.max(0,expectedDemandDuringLeadTime*0.2);
+      const recommendedOrder=Math.max(0,minStock-currentStock+expectedDemandDuringLeadTime+bufferStock);
+      const totalRecentSales=productSaleItems.map((item: any)=>item.quantity).reduce((sum: number,q: number)=>sum+q,0);
+      const confidence=totalRecentSales>=14?'high':totalRecentSales>=7?'medium':'low';
+      const confidenceNote=totalRecentSales===0?'Recent sales data is sparse; this forecast has low reliability. Consider manual validation.':totalRecentSales>=14?'Adequate sales history for reliable forecasting.':totalRecentSales>=7?'Moderate sales history; use with caution.':'Insufficient sales history; treat forecast as tentative.';
+      const mathExplanation=`Daily demand = weighted sum of last 7 days (${salesHistory.map((d,i)=>`${d}×${dailyWeightLabels[i]}`).join(' + ')}) = ${weightedDailyDemand.toFixed(2)}. Expected demand during lead time = ${weightedDailyDemand.toFixed(2)} × ${leadDays} days = ${expectedDemandDuringLeadTime.toFixed(2)}. Buffer = 20% of lead time demand = ${bufferStock.toFixed(2)}. Recommended order = max(0, min_stock ${minStock} - current stock ${currentStock} + lead time demand ${expectedDemandDuringLeadTime.toFixed(2)} + buffer ${bufferStock.toFixed(2)}) = ${recommendedOrder.toFixed(2)}.`;
+      recommendations.push({
+        itemId:product.id,
+        itemName:product.name,
+        category:product.category||'General',
+        subtitle:`${product.category||'General'} item with ${product.distributor||'direct supplier'}`,currentStock,
+        dailyAvgSales:Number(weightedDailyDemand.toFixed(2)),
+        leadTimeDays:leadDays,
+        bufferStock:Number(bufferStock.toFixed(2)),
+        recommendedOrder:Number(recommendedOrder.toFixed(2)),
+        confidence,
+        confidenceNote,
+        mathExplanation,
+      });
+    }
+    return recommendations;
+  },
   getSystemStatus:async():Promise<SystemStatusData>=>{
     const client=requireClient();const counts=await Promise.all([client.from('products').select('id',{count:'exact',head:true}),client.from('sales').select('id',{count:'exact',head:true}),client.from('customers').select('id',{count:'exact',head:true})]);for(const result of counts)if(result.error)throw result.error;
     const {data:{session}}=await client.auth.getSession();if(!session)throw new Error('Session expired. Sign in again.');
     return {status:'Connected',service:'DukaanAI Store App',uptimeSeconds:0,uptimeHuman:'Current authenticated session',database:'Supabase Postgres',activeEndpoints:['products','sales','sale_items','customers','khata_entries','inventory_adjustments','create_product','adjust_stock','complete_sale','add_khata_entry'],itemsCount:counts[0].count||0,ordersCount:counts[1].count||0,customersCount:counts[2].count||0,lastSync:new Date().toISOString()};
   }
 };
+

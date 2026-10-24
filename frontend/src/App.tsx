@@ -9,6 +9,7 @@ import { DashboardView } from './zip-ui/components/DashboardView';
 import { OrdersView } from './zip-ui/components/OrdersView';
 import { InventoryView } from './zip-ui/components/InventoryView';
 import { AssistantView } from './zip-ui/components/AssistantView';
+import { AddProductChatView } from './zip-ui/components/AddProductChatView';
 import { KhataView } from './zip-ui/components/KhataView';
 import { SystemStatusView } from './zip-ui/components/SystemStatusView';
 
@@ -88,6 +89,7 @@ export default function App(){
       {currentTab==='inventory'&&<InventoryView onInventoryChanged={()=>void fetchGlobalData()}/>}
       {currentTab==='assistant'&&<AssistantView onOrderCreated={()=>void fetchGlobalData()} onNavigate={selectTab}/>}
       {currentTab==='khata'&&<KhataView onKhataChanged={()=>void fetchGlobalData()}/>}
+      {currentTab==='addproduct'&&<AddProductChatView onNavigate={selectTab}/>}
       {currentTab==='system'&&<SystemStatusView/>}
     </div></main>
     <footer className="app-footer"><span>{storeName} <b>·</b> Live Supabase store</span><span>Inventory, sales and Khata stay in sync</span></footer>

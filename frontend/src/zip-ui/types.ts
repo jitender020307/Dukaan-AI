@@ -1,4 +1,4 @@
-export type NavTab = 'dashboard' | 'orders' | 'inventory' | 'assistant' | 'khata' | 'system';
+export type NavTab = 'dashboard' | 'orders' | 'inventory' | 'assistant' | 'khata' | 'system' | 'addproduct';
 
 export interface InventoryProduct {
   id: string;
@@ -9,11 +9,13 @@ export interface InventoryProduct {
   stock: number;
   unit: string;
   minThreshold: number;
+  leadDays?: number;
   costPrice: number;
   sellingPrice: number;
   mrp: number;
   distributor: string;
   distributorPhone: string;
+  dailyAvgSales?: number;
   status: 'in_stock' | 'low_stock' | 'out_of_stock';
 }
 
@@ -103,6 +105,51 @@ export interface AssistantParseResult {
   };
 }
 
+/** Draft extracted from a natural-language "add product" message, before confirmation. */
+export interface ChatProductDraft {
+  name: string;
+  nameHi: string;
+  barcode: string;
+  category: string;
+  stock: number;
+  unit: string;
+  minStock: number;
+  costPrice: number;
+  sellingPrice: number;
+  mrp: number;
+  distributor: string;
+  distributorPhone: string;
+  leadDays: number;
+  /** Fields the parser could not confidently extract from the message. */
+  missingFields: string[];
+  /** Human-readable note about how each field was interpreted. */
+  fieldNotes: Record<string, string>;
+}
+
+export interface ChatProductResult {
+  success: boolean;
+  productId: string;
+  name: string;
+  stock: number;
+  message: string;
+}
+
+/** Restock recommendation computed from recent sales history. */
+export interface RestockRecommendation {
+  itemId: string;
+  itemName: string;
+  category: string;
+  subtitle: string;
+  currentStock: number;
+  dailyAvgSales: number;
+  leadTimeDays: number;
+  bufferStock: number;
+  recommendedOrder: number;
+  confidence: 'high' | 'medium' | 'low';
+  confidenceNote: string;
+  mathExplanation: string;
+}
+
 export interface SystemStatusData {
   status: string;
   service: string;
@@ -115,3 +162,5 @@ export interface SystemStatusData {
   customersCount: number;
   lastSync: string;
 }
+
+

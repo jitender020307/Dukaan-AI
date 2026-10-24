@@ -35,6 +35,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'assistant', label: 'AI assistant', icon: 'auto_awesome' },
     { id: 'khata', label: 'Customer Khata', icon: 'menu_book' },
     { id: 'system', label: 'System health', icon: 'monitor_heart' },
+    { id: 'addproduct', label: 'Add Product via Chat', icon: 'add_shopping_cart' },
   ];
   const activeLabel = tabs.find((tab) => tab.id === currentTab)?.label ?? 'Overview';
 
