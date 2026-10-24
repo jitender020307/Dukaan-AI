@@ -73,3 +73,79 @@
     'GRAD' 0,
     'opsz' 24;
 }
+
+
+/* DukaanAI workspace UI */
+:root { color-scheme: light; }
+body { background: #f5f7f4; }
+button { transition: background-color .16s ease, border-color .16s ease, color .16s ease, transform .16s ease; }
+.app-shell { min-height: 100vh; display: flex; color: #18221b; background: #f5f7f4; }
+.app-sidebar { width: 248px; flex: 0 0 248px; padding: 24px 16px 16px; display: flex; flex-direction: column; background: #fff; border-right: 1px solid #e7ece7; }
+.sidebar-brand { display: flex; align-items: center; gap: 11px; padding: 0 8px 22px; }
+.sidebar-brand strong { display: block; font-size: 16px; letter-spacing: -.03em; }
+.sidebar-brand small { display: block; margin-top: 2px; color: #829087; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.brand-mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; color: #fff; background: #14663e; }
+.brand-mark .material-symbols-outlined { font-size: 23px; }
+.brand-mark.small { width: 38px; height: 38px; border-radius: 12px; }
+.store-chip { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; background: #f5f8f5; }
+.store-chip strong,.store-chip small,.user-chip strong,.user-chip small { display: block; max-width: 165px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.store-chip strong { font-size: 12px; }
+.store-chip small,.user-chip small { color: #849087; margin-top: 3px; font-size: 10px; }
+.status-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: #20a464; box-shadow: 0 0 0 4px #ddf3e7; }
+.nav-label { margin: 27px 10px 9px; color: #9aa49c; font-size: 9px; font-weight: 800; letter-spacing: .13em; }
+.side-nav { display: grid; gap: 5px; }
+.side-nav button,.signout { display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 12px; border: 0; border-radius: 10px; background: transparent; color: #69766d; text-align: left; font-size: 13px; font-weight: 600; cursor: pointer; }
+.side-nav button .material-symbols-outlined,.signout .material-symbols-outlined { font-size: 20px; }
+.side-nav button:hover,.signout:hover { background: #f3f7f4; color: #155c38; }
+.side-nav button.active { background: #e9f4ed; color: #145c37; }
+.nav-count { margin-left: auto; min-width: 21px; padding: 2px 6px; border-radius: 20px; background: #fff0d7; color: #9b5c05; text-align: center; font-size: 10px; }
+.sidebar-bottom { margin-top: auto; padding-top: 18px; border-top: 1px solid #edf0ed; }
+.user-chip { display: flex; align-items: center; gap: 9px; padding: 4px 5px 12px; }
+.user-chip strong { font-size: 10px; }
+.avatar { display: grid; place-items: center; width: 31px; height: 31px; flex: 0 0 31px; border-radius: 50%; background: #eaf3ec; color: #195d3a; font-size: 12px; font-weight: 800; }
+.signout { font-size: 12px; }
+.app-main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.topbar { min-height: 91px; padding: 18px clamp(20px,4vw,48px); display: flex; align-items: center; justify-content: space-between; gap: 14px; background: #fff; border-bottom: 1px solid #e9ede9; }
+.breadcrumb { color: #98a199; font-size: 10px; }
+.breadcrumb span { padding: 0 6px; color: #c4ccc5; }
+.breadcrumb b { color: #66736a; font-weight: 600; }
+.topbar h1 { margin: 6px 0 0; font-size: 22px; font-weight: 750; letter-spacing: -.04em; }
+.top-actions { display: flex; align-items: center; gap: 10px; }
+.role-pill { padding: 6px 10px; border: 1px solid #e3ebe4; border-radius: 20px; background: #f7faf7; color: #627167; font-size: 10px; font-weight: 700; text-transform: capitalize; }
+.page-content { width: min(100%, 1280px); flex: 1; margin: 0 auto; padding: 28px clamp(20px,4vw,48px) 20px; }
+.page-content > section > h1 { display: none; }
+.section-intro { color: #718076; font-size: 13px; }
+.metric-card { min-height: 133px; padding: 18px; border: 1px solid #e7ece7; border-radius: 14px; background: #fff; box-shadow: 0 2px 8px #193a1d08; }
+.metric-label { display: flex; align-items: center; justify-content: space-between; color: #77847b; font-size: 12px; font-weight: 600; }
+.metric-label .material-symbols-outlined { color: #5b9470; font-size: 20px; }
+.metric-value { margin-top: 14px; color: #1b2b20; font-size: 27px; font-weight: 750; letter-spacing: -.04em; }
+.metric-foot { margin-top: 3px; color: #9aa49d; font-size: 10px; }
+.quick-link { display: flex; align-items: center; gap: 13px; min-height: 72px; padding: 14px 16px; border: 1px solid #e4ebe5; border-radius: 13px; background: #fff; color: #536258; text-align: left; cursor: pointer; }
+.quick-link:hover { border-color: #b9d5c1; background: #f8fbf8; transform: translateY(-1px); }
+.quick-link > .material-symbols-outlined { color: #247047; font-size: 22px; }
+.quick-link b,.quick-link small { display: block; }
+.quick-link b { color: #27372b; font-size: 12px; }
+.quick-link small { margin-top: 3px; color: #87938a; font-size: 10px; }
+.app-footer { display: flex; justify-content: space-between; gap: 12px; padding: 14px clamp(20px,4vw,48px); border-top: 1px solid #e7ece7; color: #9aa49d; font-size: 10px; }
+.login-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(ellipse at 50% 0%, #e3f1e7, transparent 55%), #f5f7f4; }
+.login-card { width: min(100%, 410px); padding: 34px; border: 1px solid #e6ece7; border-radius: 20px; background: #fff; box-shadow: 0 18px 50px #17351d0c; }
+.login-card .brand-mark { margin-bottom: 23px; }
+.eyebrow { margin: 0; color: #558064; font-size: 9px; font-weight: 800; letter-spacing: .13em; }
+.login-card h1 { margin: 8px 0 0; font-size: 26px; font-weight: 750; letter-spacing: -.04em; }
+.login-copy { margin: 5px 0 24px; color: #79867d; font-size: 12px; }
+@media (max-width: 760px) {
+ .app-shell { display: block; }
+ .app-sidebar { position: sticky; top: 0; z-index: 20; width: 100%; padding: 10px 14px 8px; border-right: 0; border-bottom: 1px solid #e7ece7; }
+ .sidebar-brand { padding: 0 2px 9px; }
+ .sidebar-brand small,.store-chip,.nav-label,.sidebar-bottom { display: none; }
+ .brand-mark.small { width: 31px; height: 31px; border-radius: 10px; }
+ .side-nav { display: flex; gap: 4px; overflow-x: auto; }
+ .side-nav button { width: auto; flex: 1 0 auto; justify-content: center; gap: 6px; padding: 9px 10px; font-size: 11px; }
+ .side-nav button .material-symbols-outlined { font-size: 17px; }
+ .topbar { min-height: 75px; padding: 13px 18px; }
+ .topbar h1 { font-size: 19px; }
+ .page-content { padding: 20px 16px; }
+ .app-footer { display: block; padding: 12px 16px; }
+ .app-footer span { display: block; margin-top: 4px; }
+}
+@media (max-width: 430px) { .role-pill { display: none; } .top-actions button { padding: 8px 10px; font-size: 11px; } .metric-value { font-size: 23px; } .login-card { padding: 26px 22px; } }
