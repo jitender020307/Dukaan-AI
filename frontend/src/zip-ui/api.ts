@@ -5,6 +5,25 @@ import type { AssistantParseResult, ChatProductDraft, ChatProductResult, Custome
 
 type Row = Record<string, any>;
 const requireClient = () => { if (!supabase) throw new Error('Supabase is not configured. Set the VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY environment variables.'); return supabase; };
+
+/** Utility: check if any of the supplied words appear in the given text (case‑insensitive). */
+function anyWord(text: string, words: string[]): boolean {
+  const lower = text.toLowerCase();
+  return words.some(w => lower.includes(w));
+}
+
+/** Strip common question words and return a cleaned query for product matching. */
+export function cleanQuery(text: string): string {
+  const stopWords = /\b(stock|kitna|kitne|baki|left|available|ka|hai|kya|how|many|the|are|of|se)\b/g;
+  return text.toLowerCase().replace(stopWords, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Find matching products by name or id after cleaning the query. */
+export function matchProducts(products: InventoryProduct[], query: string): InventoryProduct[] {
+  const cleaned = cleanQuery(query);
+  if (!cleaned) return [];
+  return products.filter(p => p.name.toLowerCase().includes(cleaned) || p.id.toLowerCase().includes(cleaned));
+}
 async function storeId() {
   const client = requireClient();
   const { data: { user }, error: authError } = await client.auth.getUser();
@@ -63,12 +82,190 @@ async function createSale(data:{customerName:string;customerPhone?:string;items:
 }
 
 export const api={
+  /** Resolve the authenticated user's store ID for store-scoped queries. */
+  async storeId():Promise<string>{ return await storeId(); },
+
+  /** Inventory products scoped to the authenticated user's store. */
   getInventory:async(params?:{search?:string;category?:string;status?:string}):Promise<InventoryProduct[]>=>{
     const client=requireClient();let q=client.from('products').select('*').order('name');
     if(params?.search)q=q.or(`name.ilike.%${params.search.replace(/[,%()]/g,' ')}%,barcode.ilike.%${params.search.replace(/[,%()]/g,' ')}%`);
     if(params?.category&&params.category!=='All')q=q.eq('category',params.category);
     const {data,error}=await q;if(error)throw error;
     return (data||[]).map(mapProduct).filter(p=>!params?.status||params.status==='all'||p.status===params.status);
+  },
+
+  /** Store‑scoped sales report (today / week / month). */
+  async getSalesReport(period: 'today' | 'week' | 'month'):Promise<{
+    period:string;
+    revenue:number;
+    transactions:number;
+    unitsSold:number;
+    grossProfitEstimate:number;
+    topProducts:any[];
+  }> {
+    const client=requireClient();
+    const store_id = await this.storeId();
+
+    // Compute boundaries in Asia/Kolkata local time, then convert to UTC.
+    const now = new Date();
+    // Extract year/month/day/weekday in Asia/Kolkata explicitly (browser may run in any TZ).
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+    });
+    const parts = formatter.formatToParts(now);
+    const y = Number(parts.find(p => p.type === 'year')!.value);
+    const m = Number(parts.find(p => p.type === 'month')!.value) - 1; // 0‑based
+    const d = Number(parts.find(p => p.type === 'day')!.value);
+    const weekday = parts.find(p => p.type === 'weekday')!.value; // "Mon".."Sun"
+
+    // Helper: build a UTC Date from Asia/Kolkata y/m/d/h/m/s
+    const inKolkata = (year: number, month: number, day: number, hour = 0, min = 0, sec = 0) =>
+      new Date(new Date(Date.UTC(year, month, day, hour, min, sec)).getTime() - 5.5 * 3600 * 1000);
+
+    let start: Date, end: Date;
+    if (period === 'today') {
+      start = inKolkata(y, m, d);
+      end = now;
+    } else if (period === 'week') {
+      // Monday‑start week. weekday is "Mon".."Sun".
+      const weekdayIndex: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
+      const day = weekdayIndex[weekday];
+      const diff = (day === 0 ? 6 : day - 1);
+      start = inKolkata(y, m, d - diff);
+      end = now;
+    } else { // month
+      start = inKolkata(y, m, 1);
+      end = now;
+    }
+    const startStr = start.toISOString();
+    const endStr = end.toISOString();
+
+    // Pull sales for this store in the window
+    const {data:sales,error:salesError} = await client
+      .from('sales')
+      .select('id,total_amount,created_at')
+      .eq('store_id', store_id)
+      .gte('created_at', startStr)
+      .lte('created_at', endStr);
+    if (salesError) throw salesError;
+    const saleIds = (sales||[]).map(s=>s.id);
+
+    // Pull line items for those sales
+    let items: any[] = [];
+    if (saleIds.length > 0) {
+      const {data:itemsRes,error:itemsError} = await client
+        .from('sale_items')
+        .select('sale_id,product_id,quantity,price_per_unit')
+        .eq('store_id', store_id)
+        .in('sale_id', saleIds);
+      if (itemsError) throw itemsError;
+      items = itemsRes || [];
+    }
+
+    // Pull product cost_price for profit calculation
+    const {data:products,error:prodError} = await client
+      .from('products')
+      .select('id,name,cost_price')
+      .eq('store_id', store_id);
+    if (prodError) throw prodError;
+    const costMap = new Map(products?.map(p=>[p.id,p.cost_price]));
+
+    // Aggregate
+    const revenue = (sales||[]).reduce((sum,s)=>sum+Number(s.total_amount),0);
+    const transactions = (sales||[]).length;
+    const unitsSold = items.reduce((sum,i)=>sum+Number(i.quantity),0);
+    const grossProfitEstimate = items.reduce((sum,i)=> {
+      const cost = Number(costMap.get(i.product_id)||0);
+      return sum + Number(i.quantity)*(Number(i.price_per_unit)-cost);
+    },0);
+
+    // Top products by units sold
+    const productQty = new Map<string,number>();
+    items.forEach(i => {
+      productQty.set(i.product_id,(productQty.get(i.product_id)||0)+Number(i.quantity));
+    });
+    const topProducts = Array.from(productQty.entries())
+      .map(([id,units])=>{
+        const prod = (products||[]).find(p=>p.id===id);
+        const revenue = items.filter(it=>it.product_id===id)
+                             .reduce((s,it)=>s+Number(it.quantity)*Number(it.price_per_unit),0);
+        return {name:prod?.name||'Product',units_sold:units,revenue};
+      })
+      .sort((a,b)=>b.units_sold-a.units_sold)
+      .slice(0,5);
+
+    return {period, revenue, transactions, unitsSold, grossProfitEstimate, topProducts};
+  },
+
+  /** Chatbot – answer natural‑language shop questions. */
+  async getChatResponse(message: string): Promise<{intent:string;data?:any;reply:string}> {
+    const text = message.trim().toLowerCase();
+    if (!text) return {intent:'unknown',reply:"Bhai, apna sawaal likh de. Stock ya sales ke baare mein pooch sakta hai."};
+
+    const store_id = await this.storeId();
+    const client=requireClient();
+
+    // Sales & revenue queries
+    if (anyWord(text, ["sale","sales","revenue","bikri","kamai","transaction"])) {
+      let period: "today" | "week" | "month" = "today";
+      if (anyWord(text, ["week","weekly","hafte"])) period = "week";
+      else if (anyWord(text, ["month","monthly","mahine"])) period = "month";
+      const data = await this.getSalesReport(period);
+      return {
+        intent:"sales_report",
+        data,
+        reply: period === "today"
+          ? `Aaj ki sales ₹${data.revenue.toFixed(2)} hain, total ${data.transactions} transactions aur ${data.unitsSold} units sold hui hain.`
+          : `${period} revenue ₹${data.revenue.toFixed(2)} hai, ${data.transactions} transactions ke saath.`,
+      };
+    }
+
+    // Best-selling products
+    if (anyWord(text, ["best selling","best-selling","sabse zyada","top product","popular product"])) {
+      // Allow the user to ask for a specific period, e.g. "this week's best sellers".
+      let period: "today" | "week" | "month" = "today";
+      if (anyWord(text, ["week","weekly","hafte"])) period = "week";
+      else if (anyWord(text, ["month","monthly","mahine"])) period = "month";
+      const data = await this.getSalesReport(period);
+      if (data.topProducts.length === 0) {
+        const label = period === "today" ? "today" : `this ${period}`;
+        return {intent:"best_sellers",data:[],reply:`Abhi ${label} ki recorded sales mein koi product nahi bika.`};
+      }
+      const top = data.topProducts[0];
+      const label = period === "today" ? "Today's" : period === "week" ? "This week's" : "This month's";
+      return {
+        intent:"best_sellers",
+        data:data.topProducts,
+        reply:`${label} best seller is ${top.name}: ${top.units_sold} units, ₹${top.revenue?.toFixed(2)} revenue.`,
+      };
+    }
+
+    // Low-stock / restock queries
+    if (anyWord(text, ["low stock","kam stock","stock kam","out of stock","khatam","restock","order karna"])) {
+      const products = await this.getInventory();
+      const lowItems = products.filter(p => p.status === "low_stock" || p.status === "out_of_stock");
+      if (lowItems.length === 0) return {intent:"low_stock",data:[],reply:"Abhi forecast ke hisaab se koi product low-stock alert mein nahi hai."};
+      const reply = "Low-stock products: " + lowItems.map(i => `${i.name}: ${i.stock} ${i.unit} bache hain`).join(", ");
+      return {intent:"low_stock",data:lowItems,reply};
+    }
+
+    // Stock lookup for specific products
+    if (anyWord(text, ["stock","kitne","kitna","bache","available","inventory"])) {
+      const products = await this.getInventory();
+      const matches = matchProducts(products, text);
+      if (matches.length === 1) {
+        const p = matches[0];
+        return {intent:"stock_lookup",data:p,reply:`${p.name} ke ${p.stock} ${p.unit} available hain.`};
+      }
+      if (matches.length > 1) return {intent:"clarify_product",reply:`Bhai, kis product ka stock chahiye: ${matches.map(m=>m.name).join(", ")}?`};
+      return {intent:"product_not_found",reply:"Product identify nahi hua. Product ka naam likh, jaise 'Amul Taaza Milk ka stock kitna hai?'."};
+    }
+
+    return {
+      intent:"help",
+      reply:"Bhai, main abhi stock, low-stock alerts, today's sales aur best-selling products bata sakta hoon. Example: 'milk ka stock kitna hai?'",
+    };
   },
   createProduct:async(data:Omit<InventoryProduct,'id'|'status'>):Promise<InventoryProduct>=>{
     const {data:row,error}=await requireClient().rpc('create_product',{p_product:{name:data.name,name_hi:data.nameHi,barcode:data.barcode||null,category:data.category,stock:data.stock,unit:data.unit,min_stock:data.minThreshold,cost_price:data.costPrice,selling_price:data.sellingPrice,mrp:data.mrp,distributor:data.distributor,distributor_phone:data.distributorPhone}});
