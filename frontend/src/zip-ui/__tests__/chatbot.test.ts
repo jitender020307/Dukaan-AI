@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanQuery, matchProducts } from '../api'
+import { cleanQuery, isChatbotQuery, matchProducts } from '../api'
 import type { InventoryProduct } from '../types'
 
 const products: InventoryProduct[] = [
@@ -70,5 +70,20 @@ describe('matchProducts', () => {
   it('returns empty array when nothing matches', () => {
     const matches = matchProducts(products, 'xyz')
     expect(matches).toHaveLength(0)
+  })
+})
+
+describe('chatbot message routing', () => {
+  it('routes product stock questions to the chatbot', () => {
+    expect(isChatbotQuery('Amul Taaza Milk ka stock kitna hai?')).toBe(true)
+  })
+
+  it('routes sales reports to the chatbot', () => {
+    expect(isChatbotQuery('What were this week sales?')).toBe(true)
+  })
+
+  it('keeps customer order messages on the existing order parser path', () => {
+    expect(isChatbotQuery('Order 2 Amul Taaza Milk')).toBe(false)
+    expect(isChatbotQuery('Please add 3 Brown Bread')).toBe(false)
   })
 })
