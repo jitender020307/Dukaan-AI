@@ -37,26 +37,23 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ onOrderCreated, on
     setChatReply(null);
 
     try {
-      // 1️⃣ Try the *order* parser first (existing behaviour)
-      const orderResult = await api.parseCustomerOrder(customerMessage.trim());
-      if (orderResult.parsedItems && orderResult.parsedItems.length > 0) {
-        setParseResult(orderResult);
-      } else {
-        // 2️⃣ No parsed order items → fall back to the chatbot intent engine
-        const chatRes = await api.getChatResponse(customerMessage.trim());
+      const message = customerMessage.trim();
+      if (api.isChatbotQuery(message)) {
+        // Stock and report questions must bypass the order parser, which can
+        // otherwise interpret a product mention as a one-item order.
+        const chatRes = await api.getChatResponse(message);
         setChatReply(chatRes.reply);
-        setParseResult({
-          intent: chatRes.intent,
-          parsedItems: [],
-          clarificationsNeeded: [],
-          confirmedSummary: {
-            itemsCount: 0,
-            subtotal: 0,
-            deliveryFee: 0,
-            total: 0,
-            canPlaceOrder: false,
-          },
-        } as any);
+        setParseResult(null);
+      } else {
+        // Keep the established order parser first for customer order messages.
+        const orderResult = await api.parseCustomerOrder(message);
+        if (orderResult.parsedItems && orderResult.parsedItems.length > 0) {
+          setParseResult(orderResult);
+        } else {
+          const chatRes = await api.getChatResponse(message);
+          setChatReply(chatRes.reply);
+          setParseResult(null);
+        }
       }
     } catch (err: any) {
       setParseError(err.message || 'Could not process your request');
