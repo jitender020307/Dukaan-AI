@@ -24,6 +24,26 @@ export function matchProducts(products: InventoryProduct[], query: string): Inve
   if (!cleaned) return [];
   return products.filter(p => p.name.toLowerCase().includes(cleaned) || p.id.toLowerCase().includes(cleaned));
 }
+
+/** Route recognized shop questions directly to the chatbot instead of the order parser. */
+export function isChatbotQuery(message: string): boolean {
+  const text = message.trim().toLowerCase();
+  if (!text) return false;
+
+  // Explicit customer order requests stay with the existing order parser.
+  if (/\b(?:add|buy|purchase|place an order|order)\b/.test(text) &&
+      !/\b(?:sales?|revenue|transactions?|orders? today|orders? this week|orders? this month)\b/.test(text)) {
+    return false;
+  }
+
+  return anyWord(text, [
+    'stock', 'inventory', 'low stock', 'kam stock', 'out of stock', 'restock',
+    'available', 'kitna', 'kitne', 'bache', 'khatam',
+    'sales', 'sale', 'revenue', 'bikri', 'kamai', 'transaction',
+    'best selling', 'best-selling', 'sabse zyada', 'top product', 'popular product',
+    'what can you do', 'help',
+  ]);
+}
 async function storeId() {
   const client = requireClient();
   const { data: { user }, error: authError } = await client.auth.getUser();
@@ -82,6 +102,9 @@ async function createSale(data:{customerName:string;customerPhone?:string;items:
 }
 
 export const api={
+  /** Whether a message is a chatbot query rather than a customer order. */
+  isChatbotQuery,
+
   /** Resolve the authenticated user's store ID for store-scoped queries. */
   async storeId():Promise<string>{ return await storeId(); },
 
@@ -106,38 +129,38 @@ export const api={
     const client=requireClient();
     const store_id = await this.storeId();
 
-    // Compute boundaries in Asia/Kolkata local time, then convert to UTC.
-    const now = new Date();
-    // Extract year/month/day/weekday in Asia/Kolkata explicitly (browser may run in any TZ).
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Kolkata',
-      year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
-    });
-    const parts = formatter.formatToParts(now);
-    const y = Number(parts.find(p => p.type === 'year')!.value);
-    const m = Number(parts.find(p => p.type === 'month')!.value) - 1; // 0‑based
-    const d = Number(parts.find(p => p.type === 'day')!.value);
-    const weekday = parts.find(p => p.type === 'weekday')!.value; // "Mon".."Sun"
+/** Compute report boundaries in Asia/Kolkata, independent of the browser's timezone. */
+export function getSalesPeriodBounds(
+  period: 'today' | 'week' | 'month',
+  now: Date = new Date(),
+): { start: Date; end: Date } {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+  });
+  const parts = formatter.formatToParts(now);
+  const y = Number(parts.find(p => p.type === 'year')!.value);
+  const m = Number(parts.find(p => p.type === 'month')!.value) - 1;
+  const d = Number(parts.find(p => p.type === 'day')!.value);
+  const weekday = parts.find(p => p.type === 'weekday')!.value;
+  const inKolkata = (year: number, month: number, day: number) =>
+    new Date(Date.UTC(year, month, day) - 5.5 * 3600 * 1000);
 
-    // Helper: build a UTC Date from Asia/Kolkata y/m/d/h/m/s
-    const inKolkata = (year: number, month: number, day: number, hour = 0, min = 0, sec = 0) =>
-      new Date(new Date(Date.UTC(year, month, day, hour, min, sec)).getTime() - 5.5 * 3600 * 1000);
+  let start: Date;
+  if (period === 'today') {
+    start = inKolkata(y, m, d);
+  } else if (period === 'week') {
+    const weekdayIndex: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
+    const day = weekdayIndex[weekday];
+    const diff = day === 0 ? 6 : day - 1;
+    start = inKolkata(y, m, d - diff);
+  } else {
+    start = inKolkata(y, m, 1);
+  }
+  return { start, end: now };
+}
 
-    let start: Date, end: Date;
-    if (period === 'today') {
-      start = inKolkata(y, m, d);
-      end = now;
-    } else if (period === 'week') {
-      // Monday‑start week. weekday is "Mon".."Sun".
-      const weekdayIndex: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
-      const day = weekdayIndex[weekday];
-      const diff = (day === 0 ? 6 : day - 1);
-      start = inKolkata(y, m, d - diff);
-      end = now;
-    } else { // month
-      start = inKolkata(y, m, 1);
-      end = now;
-    }
+    const { start, end } = getSalesPeriodBounds(period);
     const startStr = start.toISOString();
     const endStr = end.toISOString();
 
