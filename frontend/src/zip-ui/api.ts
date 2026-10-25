@@ -101,34 +101,6 @@ async function createSale(data:{customerName:string;customerPhone?:string;items:
   return mapOrder(sale,lines);
 }
 
-export const api={
-  /** Whether a message is a chatbot query rather than a customer order. */
-  isChatbotQuery,
-
-  /** Resolve the authenticated user's store ID for store-scoped queries. */
-  async storeId():Promise<string>{ return await storeId(); },
-
-  /** Inventory products scoped to the authenticated user's store. */
-  getInventory:async(params?:{search?:string;category?:string;status?:string}):Promise<InventoryProduct[]>=>{
-    const client=requireClient();let q=client.from('products').select('*').order('name');
-    if(params?.search)q=q.or(`name.ilike.%${params.search.replace(/[,%()]/g,' ')}%,barcode.ilike.%${params.search.replace(/[,%()]/g,' ')}%`);
-    if(params?.category&&params.category!=='All')q=q.eq('category',params.category);
-    const {data,error}=await q;if(error)throw error;
-    return (data||[]).map(mapProduct).filter(p=>!params?.status||params.status==='all'||p.status===params.status);
-  },
-
-  /** Store‑scoped sales report (today / week / month). */
-  async getSalesReport(period: 'today' | 'week' | 'month'):Promise<{
-    period:string;
-    revenue:number;
-    transactions:number;
-    unitsSold:number;
-    grossProfitEstimate:number;
-    topProducts:any[];
-  }> {
-    const client=requireClient();
-    const store_id = await this.storeId();
-
 /** Compute report boundaries in Asia/Kolkata, independent of the browser's timezone. */
 export function getSalesPeriodBounds(
   period: 'today' | 'week' | 'month',
@@ -159,6 +131,34 @@ export function getSalesPeriodBounds(
   }
   return { start, end: now };
 }
+
+export const api={
+  /** Whether a message is a chatbot query rather than a customer order. */
+  isChatbotQuery,
+
+  /** Resolve the authenticated user's store ID for store-scoped queries. */
+  async storeId():Promise<string>{ return await storeId(); },
+
+  /** Inventory products scoped to the authenticated user's store. */
+  getInventory:async(params?:{search?:string;category?:string;status?:string}):Promise<InventoryProduct[]>=>{
+    const client=requireClient();let q=client.from('products').select('*').order('name');
+    if(params?.search)q=q.or(`name.ilike.%${params.search.replace(/[,%()]/g,' ')}%,barcode.ilike.%${params.search.replace(/[,%()]/g,' ')}%`);
+    if(params?.category&&params.category!=='All')q=q.eq('category',params.category);
+    const {data,error}=await q;if(error)throw error;
+    return (data||[]).map(mapProduct).filter(p=>!params?.status||params.status==='all'||p.status===params.status);
+  },
+
+  /** Store‑scoped sales report (today / week / month). */
+  async getSalesReport(period: 'today' | 'week' | 'month'):Promise<{
+    period:string;
+    revenue:number;
+    transactions:number;
+    unitsSold:number;
+    grossProfitEstimate:number;
+    topProducts:any[];
+  }> {
+    const client=requireClient();
+    const store_id = await this.storeId();
 
     const { start, end } = getSalesPeriodBounds(period);
     const startStr = start.toISOString();
