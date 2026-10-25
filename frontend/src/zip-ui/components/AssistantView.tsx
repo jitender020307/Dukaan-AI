@@ -12,6 +12,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ onOrderCreated, on
   const [isParsing, setIsParsing] = useState(false);
   const [parseResult, setParseResult] = useState<AssistantParseResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [chatReply, setChatReply] = useState<string | null>(null);
 
   // Order Placement State
   const [customerName, setCustomerName] = useState('');
@@ -33,12 +34,32 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ onOrderCreated, on
     setParseError(null);
     setConfirmedOrder(null);
     setPlacementError(null);
+    setChatReply(null);
 
     try {
-      const result = await api.parseCustomerOrder(customerMessage.trim());
-      setParseResult(result);
+      // 1️⃣ Try the *order* parser first (existing behaviour)
+      const orderResult = await api.parseCustomerOrder(customerMessage.trim());
+      if (orderResult.parsedItems && orderResult.parsedItems.length > 0) {
+        setParseResult(orderResult);
+      } else {
+        // 2️⃣ No parsed order items → fall back to the chatbot intent engine
+        const chatRes = await api.getChatResponse(customerMessage.trim());
+        setChatReply(chatRes.reply);
+        setParseResult({
+          intent: chatRes.intent,
+          parsedItems: [],
+          clarificationsNeeded: [],
+          confirmedSummary: {
+            itemsCount: 0,
+            subtotal: 0,
+            deliveryFee: 0,
+            total: 0,
+            canPlaceOrder: false,
+          },
+        } as any);
+      }
     } catch (err: any) {
-      setParseError(err.message || 'Could not match the request to current inventory');
+      setParseError(err.message || 'Could not process your request');
     } finally {
       setIsParsing(false);
     }
@@ -137,8 +158,16 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ onOrderCreated, on
         </div>
       )}
 
-      {/* Step 2: Parsed Result Breakdown */}
-      {parseResult && (
+      {/* Chatbot answer (only shown when no order items were parsed) */}
+      {chatReply && (
+        <div className="bg-white p-4 sm:p-5 rounded-lg border border-gray-200 shadow-xs space-y-2">
+          <h3 className="text-sm font-bold text-gray-900">Chatbot answer</h3>
+          <p className="text-xs text-gray-800 whitespace-pre-line">{chatReply}</p>
+        </div>
+      )}
+
+      {/* Step 2: Parsed Result Breakdown (only for order parsing, not chatbot replies) */}
+      {parseResult && !chatReply && (
         <div className="space-y-4">
           <div className="bg-white p-4 sm:p-5 rounded-lg border border-gray-200 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-gray-200 pb-2.5">
