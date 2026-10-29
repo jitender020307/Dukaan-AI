@@ -1,0 +1,56 @@
+security:
+  secrets: .env
+  example: .env.example
+faf_version: "3.0"
+project:
+  name: dukaanai-dashboard
+  goal: Store dashboard for inventory, barcode lookup, sales, and customer Khata. Supabase Auth is used for sign-in and Supabase Postgres is the source of truth for store data.
+  main_language: TypeScript
+  type: frontend  # found: frontend framework
+stack:
+  frontend: React
+  css_framework: Tailwind CSS
+  ui_library: ""
+  state_management: ""
+  backend: slotignored
+  api_type: slotignored
+  runtime: slotignored
+  database: slotignored
+  connection: slotignored
+  hosting: ""
+  build: Vite 8
+  cicd: ""
+  monorepo_tool: slotignored
+  package_manager: slotignored
+  workspaces: slotignored
+  admin: slotignored
+  cache: slotignored
+  search: slotignored
+  storage: slotignored
+human_context:
+  who: ""
+  what: Store dashboard for inventory, barcode lookup, sales, and customer Khata. Supabase Auth is used for sign-in and Supabase Postgres is the source of truth for store data.
+  why: ""
+  where: ""
+  when: ""
+  how: npm run dev, npm run build
+monorepo:
+  packages_count: slotignored
+  build_orchestrator: slotignored
+  versioning_strategy: slotignored
+  shared_configs: slotignored
+  remote_cache: slotignored
+tech_stack:
+  - TypeScript
+  - React
+  - Vite
+  - esbuild
+  - Tailwind CSS
+key_files:
+  - package.json
+  - README.md
+  - tsconfig.json
+commands:
+  build: npm run build
+  lint: npm run lint
+  dev: npm run dev
